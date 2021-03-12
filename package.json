@@ -1,0 +1,35 @@
+{
+  "name": "predebug",
+  "version": "1.0.0",
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@bitbucket.org/donatasluciunas/smartdebug.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "homepage": "https://bitbucket.org/donatasluciunas/smartdebug#readme",
+  "engines": {
+    "vscode": "^1.32.0"
+  },
+  "activationEvents": [
+    "onCommand:extension.tortor"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "extension.tortor",
+        "title": "Tortor"
+      }
+    ]
+  },
+  "scripts": {},
+  "devDependencies": {
+    "@types/vscode": "^1.32.0"
+  },
+  "dependencies": {
+    "esprima": "^4.0.1",
+    "ws": "^7.4.4"
+  }
+}
