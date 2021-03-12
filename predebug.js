@@ -1,5 +1,111 @@
-var spawn = require('child_process').spawn,
-    child = spawn('node', ['inspect', 'index.js']);
+const spawn = require('child_process').spawn;
+const WebSocket = require('ws');
+
+(async () => {
+    try {
+        const child = spawn('node', ['--inspect', 'index.js', '--tortor']);
+        // child.stdout.pipe(process.stdout);
+        // child.stderr.pipe(process.stderr);
+
+        const wsUrl = await new Promise((resolve, reject) => {
+            let line = '';
+            const catchWebSocketUrl = data => {
+                line += data.toString();
+                if (!line.includes('\n')) {
+                    return;
+                }
+                if (!line.includes('ws://')) {
+                    reject(new Error('Could not detect WS URL'));
+                }
+
+                resolve(line.match(/ws:\/\/[\S]+/)[0]);
+
+                child.stderr.off('data', catchWebSocketUrl)
+            };
+
+            child.stderr.on('data', catchWebSocketUrl);
+        });
+
+        const ws = new WebSocket(wsUrl);
+
+        await new Promise(resolve => {
+            ws.on('open', resolve);
+        });
+
+        let nextMessageId = 1;
+        const getNextMessageId = () => {
+            return nextMessageId++;
+        };
+
+        const createMessage = (method, params) => {
+            const id = getNextMessageId();
+            const msg = JSON.stringify({
+                id: id,
+                method: method,
+                params: params,
+            });
+            return { msgid: id, msg: msg };
+        }
+
+        await new Promise(resolve => {
+            const { msgid, msg } = createMessage('Debugger.enable');
+            ws.on('message', dataString => {
+                const data = JSON.parse(dataString);
+                if (data.id === msgid) {
+                    resolve(data.result);
+                }
+            });
+            ws.send(msg);
+        });
+
+        const scriptId = (await new Promise(resolve => {
+            ws.on('message', dataString => {
+                const data = JSON.parse(dataString);
+                if (data.method === 'Debugger.scriptParsed' && data.params.url === 'file:///C:/Users/donat/Code/smartdebug/index.js') {
+                    return resolve(data);
+                }
+            });
+        })).params.scriptId;
+
+        ws.send(createMessage('Debugger.setBreakpoint', {
+            location: {
+                scriptId: scriptId,
+                lineNumber: 13,
+                columnNumber: 0,
+            }
+        }).msg);
+
+        const debuggerPausedState = await new Promise(resolve => {
+            ws.on('message', dataString => {
+                const data = JSON.parse(dataString);
+                if (data.method === 'Debugger.paused') {
+                    return resolve(data);
+                }
+            });
+        });
+
+        const properties = await new Promise(resolve => {
+            const { msgid, msg } = createMessage('Runtime.getProperties', { objectId: debuggerPausedState.params.callFrames[0].scopeChain[0].object.objectId });
+            ws.on('message', dataString => {
+                const data = JSON.parse(dataString);
+                if (data.id === msgid) {
+                    resolve(data.result);
+                }
+            });
+            ws.send(msg);
+        });
+
+        console.log(JSON.stringify(properties));
+
+        // todo: remove?
+        ws.on('message', dataString => {
+            const data = JSON.parse(dataString);
+            console.debug(data);
+        });
+    } catch (e) {
+        console.error(e);
+    }
+})();
 
 // https://nodejs.org/api/debugger.html
 // CLI debugger berods neleidžia išsi'list'int tiesiog visų scope variables
@@ -34,21 +140,3 @@ Ir išpieši info virš visų variables
 
 Galima kartu maintain'int output tų testų, ir jeigu output pasikeitė - matai be'commit'indamas
 */
-
-(async () => {
-    child.stdin.setEncoding('utf-8');
-    child.stdout.pipe(process.stdout);
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    child.stdin.write("sb(2)\n");
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    child.stdin.write("c\n");
-
-    while (true) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        child.stdin.write("n\n");
-    }
-
-    // child.stdin.end(); /// this call seems necessary, at least with plain node.js executable 
-})();

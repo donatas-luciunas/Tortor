@@ -1,13 +1,13 @@
 (() => {
-	global.debug = /--debug|--inspect/.test(process.execArgv.join(' '));
+	global.tortor = process.argv.includes('--tortor');
 	global.assert = require('assert');
 })();
 
 (async () => {
-	if (global.debug) {
-		global.assert(false);
+	if (global.tortor) {
+		console.log('test');
 	}
-	const a = 5;
+	const a = require('./kitas-index');
 	const b = 3;
 	const c = a + b;
 	console.log(c);
