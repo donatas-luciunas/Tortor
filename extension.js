@@ -47,13 +47,21 @@ function activate(context) {
 				const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.toString().replace('file:///', '').replace('%3A', ':');
 				const path = require('path');
 				const fs = require('fs');
-				const packageJsonPath = path.join(workspaceFolder, 'package.json');
-				if (fs.existsSync(packageJsonPath)) {
-					return [
-						path.join(workspaceFolder, JSON.parse(fs.readFileSync(packageJsonPath).toString()).main),
-						path.dirname(packageJsonPath)
-					];
+				{
+					let currentDirectory = path.dirname(fileName);
+					while (fs.existsSync(currentDirectory)) {
+						const packageJsonPath = path.join(currentDirectory, 'package.json');
+						if (fs.existsSync(packageJsonPath)) {
+							return [
+								path.join(currentDirectory, JSON.parse(fs.readFileSync(packageJsonPath).toString()).main),
+								currentDirectory
+							];
+						} else {
+							currentDirectory = path.join(currentDirectory, '..');
+						}
+					}
 				}
+
 				return [fileName, workspaceFolder];
 			})();
 			const lineNumber = vscode.window.activeTextEditor.selection.start.line;
@@ -278,8 +286,6 @@ function activate(context) {
 					ws.send(createMessage('Debugger.resume').msg);
 				});
 			}
-
-			await new Promise(resolve => setTimeout(resolve, 2000));
 
 			insightsCollection.set(vscode.window.activeTextEditor.document.uri, expressionTokens.reduce((result, expressionToken) => {
 				for (const value of variableValues.get(expressionToken.expression)) {
