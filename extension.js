@@ -17,6 +17,7 @@ function activate(context) {
 	// This line of code will only be executed once when your extension is activated
 	console.log('Now active!');
 	const insightsCollection = vscode.languages.createDiagnosticCollection('tortor');
+	let child;
 
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with  registerCommand
@@ -25,13 +26,47 @@ function activate(context) {
 		// The code you place here will be executed every time your command is executed
 		insightsCollection.clear();
 
-		let child;
+		let ws;
+
+		const request = message => {
+			return new Promise((resolve, reject) => {
+				const handler = dataString => {
+					const data = JSON.parse(dataString);
+					if (!data.id && data.method === JSON.parse(message.msg).method + 'd' || data.id === message.msgid) {
+						ws.off('message', handler);
+						if (data.error) {
+							const error = new Error(data.error.message);
+							error.code = data.error.code;
+							reject(error);
+						} else {
+							resolve(data.result);
+						}
+					}
+				};
+				ws.on('message', handler);
+				ws.send(message.msg);
+			});
+		};
+
 		try {
-			const fileName = vscode.window.activeTextEditor.document.fileName.toLowerCase().replace(/\\/g, '/');
+			const fileName = vscode.window.activeTextEditor.document.fileName.replace(/\\/g, '/');
+			const mainFileName = (() => {
+				const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.toString().replace('file:///', '').replace('%3A', ':');
+				const path = require('path');
+				const fs = require('fs');
+				const packageJsonPath = path.join(workspaceFolder, 'package.json');
+				if (fs.existsSync(packageJsonPath)) {
+					return path.join(workspaceFolder, JSON.parse(fs.readFileSync(packageJsonPath).toString()).main);
+				}
+				return fileName;
+			})();
 			const lineNumber = vscode.window.activeTextEditor.selection.start.line;
 			const scriptMetaData = esprima.parseScript(require('fs').readFileSync(fileName).toString(), { loc: true });
 
-			child = spawn('node', ['--inspect', fileName, '--tortor']);
+			child = spawn('node', ['--inspect-brk', mainFileName, '--tortor']);
+			child.stdout.pipe(process.stdout);
+			child.stderr.pipe(process.stderr);
+			// TODO: reiktų forward'int stream kažkur kur mato user
 
 			const wsUrl = await new Promise((resolve, reject) => {
 				let line = '';
@@ -54,10 +89,21 @@ function activate(context) {
 
 			// https://source.chromium.org/chromium/chromium/src/+/master:v8/test/debugger/test-api.js
 			// čia gal kažkas į temą
-			const ws = new WebSocket(wsUrl);
+			ws = new WebSocket(wsUrl);
 
 			await new Promise(resolve => {
 				ws.on('open', resolve);
+			});
+
+			ws.on('message', dataString => {
+				const data = JSON.parse(dataString);
+				if (data.method === 'Debugger.scriptParsed') {
+					console.debug(`script ${data.params.url}`);
+				} else if (data.method === 'Debugger.paused') {
+					console.debug('Debugger.paused', data.params.reason);
+				} else {
+					console.debug(data);
+				}
 			});
 
 			let nextMessageId = 1;
@@ -75,41 +121,16 @@ function activate(context) {
 				return { msgid: id, msg: msg };
 			}
 
+			await request(createMessage('Debugger.enable'));
+			await request(createMessage('Debugger.setPauseOnExceptions', { state: 'uncaught' }));
+			await request(createMessage('Debugger.setBreakpointByUrl', {
+				url: `file:///${fileName}`,
+				lineNumber: lineNumber,
+				columnNumber: 0
+			}));
+
+			await request(createMessage('Runtime.runIfWaitingForDebugger'));
 			await new Promise(resolve => {
-				const { msgid, msg } = createMessage('Debugger.enable');
-				const handler = dataString => {
-					const data = JSON.parse(dataString);
-					if (data.id === msgid) {
-						ws.off('message', handler);
-						return resolve(data.result);
-					}
-				};
-				ws.on('message', handler);
-				ws.send(msg);
-			});
-
-			const scriptId = (await new Promise(resolve => {
-				const handler = dataString => {
-					const data = JSON.parse(dataString);
-					if (data.method === 'Debugger.scriptParsed') {
-						if (data.params.url.toLowerCase() === `file:///${fileName}`) {
-							ws.off('message', handler);
-							return resolve(data);
-						}
-					}
-				};
-				ws.on('message', handler);
-			})).params.scriptId;
-
-			ws.send(createMessage('Debugger.setBreakpoint', {
-				location: {
-					scriptId: scriptId,
-					lineNumber: lineNumber,
-					columnNumber: 0,
-				}
-			}).msg);
-
-			const debuggerPausedState = await new Promise(resolve => {
 				const handler = dataString => {
 					const data = JSON.parse(dataString);
 					if (data.method === 'Debugger.paused') {
@@ -118,40 +139,72 @@ function activate(context) {
 					}
 				};
 				ws.on('message', handler);
+			})
+			await new Promise(resolve => {
+				const handler = dataString => {
+					const data = JSON.parse(dataString);
+					if (data.method === 'Debugger.resumed') {
+						ws.off('message', handler);
+						return resolve(data);
+					}
+				};
+				ws.on('message', handler);
+				ws.send(createMessage('Debugger.resume').msg);
 			});
 
-			const startLocation = debuggerPausedState.params.callFrames[0].scopeChain[0].startLocation;
-			let analyzeQueue = [scriptMetaData];
-			const messages = [];
-			while (analyzeQueue.length > 0) {
-				const item = analyzeQueue.pop();
-				for (const [key, identifierToken] of Object.entries(item)) {
-					if (identifierToken && typeof identifierToken === 'object') {
-						if (identifierToken.type && identifierToken.type === 'Identifier') {
-							if (identifierToken.loc.start.line - 1 >= startLocation.lineNumber && identifierToken.loc.start.column >= startLocation.columnNumber && identifierToken.loc.end.line - 1 < lineNumber) {
-								const value = await new Promise(resolve => {
-									const { msgid, msg } = createMessage('Debugger.evaluateOnCallFrame', { callFrameId: debuggerPausedState.params.callFrames[0].callFrameId, expression: identifierToken.name, throwOnSideEffect: true });
-									const handler = dataString => {
-										const data = JSON.parse(dataString);
-										if (data.id === msgid) {
-											ws.off('message', handler);
-											return resolve(data.result.result.description);
-										}
+			const variableValues = new Map();
+			let identifierTokens;
+			while (true) {
+				const debuggerPausedState = await new Promise(resolve => {
+					const handler = dataString => {
+						const data = JSON.parse(dataString);
+						if (data.method === 'Debugger.paused') {
+							ws.off('message', handler);
+							return resolve(data);
+						}
+					};
+					ws.on('message', handler);
+				});
+
+				if (identifierTokens === undefined) {
+					const startLocation = debuggerPausedState.params.callFrames[0].scopeChain[0].startLocation;
+					let analyzeQueue = [scriptMetaData];
+					while (analyzeQueue.length > 0) {
+						const item = analyzeQueue.pop();
+						for (const [key, identifierToken] of Object.entries(item)) {
+							if (identifierToken && typeof identifierToken === 'object') {
+								if (identifierToken.type && identifierToken.type === 'Identifier') {
+									if (identifierToken.loc.start.line - 1 >= startLocation.lineNumber && identifierToken.loc.start.column >= startLocation.columnNumber && identifierToken.loc.end.line - 1 < lineNumber) {
+										identifierTokens.push(identifierToken);
 									}
-									ws.on('message', handler);
-									ws.send(msg);
-								});
-								messages.push({
-									loc: identifierToken.loc,
-									value
-								});
+								} else if (Array.isArray(identifierToken)) {
+									analyzeQueue.push(...identifierToken);
+								} else {
+									analyzeQueue.push(identifierToken);
+								}
 							}
-						} else if (Array.isArray(identifierToken)) {
-							analyzeQueue.push(...identifierToken);
-						} else {
-							analyzeQueue.push(identifierToken);
 						}
 					}
+				}
+
+				for (const identifierToken of identifierTokens) {
+					// todo: skip duplicates
+					const value = await new Promise(resolve => {
+						const { msgid, msg } = createMessage('Debugger.evaluateOnCallFrame', { callFrameId: debuggerPausedState.params.callFrames[0].callFrameId, expression: identifierToken.name, throwOnSideEffect: true });
+						const handler = dataString => {
+							const data = JSON.parse(dataString);
+							if (data.id === msgid) {
+								ws.off('message', handler);
+								return resolve(data.result.result.description);
+							}
+						}
+						ws.on('message', handler);
+						ws.send(msg);
+					});
+					messages.push({
+						loc: identifierToken.loc,
+						value
+					});
 				}
 			}
 
@@ -162,13 +215,15 @@ function activate(context) {
 				severity: vscode.DiagnosticSeverity.Information,
 				source: ''
 			})));
-
 		} catch (e) {
 			console.error(e);
 		} finally {
-			// reiktų leist IDE bet kada debugger prijungt 💡
+			if (ws) {
+				ws.close();
+			}
 			if (child) {
 				child.kill();
+				child = null;
 			}
 		}
 	});
