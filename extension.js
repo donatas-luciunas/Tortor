@@ -150,7 +150,7 @@ function activate(context) {
 
 			await request(createMessage('Debugger.enable'));
 			await request(createMessage('Runtime.enable'));
-			await request(createMessage('Debugger.setPauseOnExceptions', { state: 'uncaught' }));
+			await request(createMessage('Debugger.setPauseOnExceptions', { state: 'none' }));
 			await request(createMessage('Debugger.setBreakpointByUrl', {
 				url: `file:///${fileName}`,
 				lineNumber: lineNumber,
@@ -247,6 +247,8 @@ function activate(context) {
 								});
 								variableValues.set(expression, []);
 							}
+						} else if (token.type && token.type === 'ObjectExpression') {
+							// do nothing
 						} else {
 							for (const [key, innerToken] of Object.entries(token)) {
 								if (innerToken && typeof innerToken === 'object') {
@@ -263,7 +265,7 @@ function activate(context) {
 
 				for (const [key, values] of variableValues.entries()) {
 					const value = await new Promise(resolve => {
-						const { msgid, msg } = createMessage('Debugger.evaluateOnCallFrame', { callFrameId: debuggerPausedState.callFrames[0].callFrameId, expression: key, throwOnSideEffect: true });
+						const { msgid, msg } = createMessage('Debugger.evaluateOnCallFrame', { callFrameId: debuggerPausedState.callFrames[0].callFrameId, expression: key, generatePreview: true, throwOnSideEffect: true });
 						const handler = dataString => {
 							const data = JSON.parse(dataString);
 							if (data.id === msgid) {
@@ -274,7 +276,96 @@ function activate(context) {
 						ws.on('message', handler);
 						ws.send(msg);
 					});
-					values.push(value.description || value.value || 'UNDEFINED');
+
+					if (value.preview) {
+						const object = (() => {
+							const result = {};
+							for (const property of value.preview.properties) {
+								let value = property.value;
+								switch (property.type) {
+									case "object": {
+										switch (property.subtype) {
+											case "error": {
+												const desc = property.description;
+												switch (property.className) {
+													case "EvalError": throw new EvalError(desc);
+													case "RangeError": throw new RangeError(desc);
+													case "ReferenceError": throw new ReferenceError(desc);
+													case "SyntaxError": throw new SyntaxError(desc);
+													case "TypeError": throw new TypeError(desc);
+													case "URIError": throw new URIError(desc);
+													default: throw new Error(desc);
+												}
+												break;
+											}
+											case "array": {
+												const array = [];
+												value = array;
+												break;
+											}
+											case "null": {
+												value = null;
+												break;
+											}
+											default: {
+												switch (property.className) {
+													case "global":
+														value = Function('return this')();
+														break;
+													case "Number":
+													case "String":
+													case "Boolean":
+														value = this.reconstructValue(property.objectId);
+														break;
+													default:
+														value = {};
+														break;
+												}
+												break;
+											}
+										}
+										break;
+									}
+									case "undefined": {
+										value = undefined;
+										isUndefined = true;
+										break;
+									}
+									case "number": {
+										if (property.description === "NaN") {
+											value = NaN;
+										}
+										break;
+									}
+									case "bigint": {
+										assertEquals("n", property.unserializableValue.charAt(
+											property.unserializableValue.length - 1));
+										value = eval(property.unserializableValue);
+										break;
+									}
+									case "string":
+									case "boolean": {
+										break;
+									}
+									case "function": {
+										value = () => { };
+									}
+									default: {
+										break;
+									}
+								}
+
+								result[property.name] = value;
+							}
+
+							return result;
+						})();
+						values.push(JSON.stringify(object, null, 4));
+					} else if (typeof value.value === 'string') {
+						values.push(`'${value.value}'`);
+					} else {
+						values.push(value.description || value.value || 'UNDEFINED');
+					}
 				}
 
 				await new Promise(resolve => {
@@ -296,7 +387,7 @@ function activate(context) {
 						code: '',
 						message: value,
 						range: new vscode.Range(new vscode.Position(expressionToken.loc.start.line - 1, expressionToken.loc.start.column), new vscode.Position(expressionToken.loc.end.line - 1, expressionToken.loc.end.column)),
-						severity: vscode.DiagnosticSeverity.Information,
+						severity: vscode.DiagnosticSeverity.Hint,
 						source: 'Tortor'
 					});
 				}

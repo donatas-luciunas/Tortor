@@ -6,7 +6,8 @@ module.exports = function (a, b) {
     }
     const c = a + b;
     const z = 'testas';
-    console.log(c, z);
+    const d = { mano: 'ilgas', kitas: { o: 3 }, a: [1, 2, 3], d: null };
+    console.log(c, z, d);
     if (global.tortor) {
         global.tortor.ti(null, 'mano trumpas testas', () => {
             global.tortor.assert.equal(c, 8);
