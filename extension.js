@@ -2,6 +2,7 @@ const spawn = require('child_process').spawn;
 const WebSocket = require('ws');
 const esprima = require('esprima');
 const vscode = require('vscode');
+const util = require('util');
 
 /**
  * @param {vscode.ExtensionContext} context
@@ -360,7 +361,7 @@ function activate(context) {
 
 							return result;
 						})();
-						values.push(JSON.stringify(object, null, 4));
+						values.push(util.inspect(object));
 					} else if (typeof value.value === 'string') {
 						values.push(`'${value.value}'`);
 					} else {
