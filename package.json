@@ -22,6 +22,14 @@
         "command": "extension.tortor",
         "title": "Tortor"
       }
+    ],
+    "keybindings": [
+      {
+        "command": "extension.tortor",
+        "key": "ctrl+shift+/",
+        "mac": "cmd+shift+/",
+        "when": "editorTextFocus"
+      }
     ]
   },
   "scripts": {},

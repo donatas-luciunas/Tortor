@@ -1,9 +1,10 @@
 module.exports = function (a, b) {
     const c = a + b;
-    console.log(c);
+    const z = 'testas';
+    console.log(c, z);
     if (global.tortor) {
-        if (global.tortor.mocha.suite.suites[0].ctx.test.title === 'mano trumpas testas') {
+        global.tortor.ti('mano trumpas testas', () => {
             global.tortor.assert.equal(c, 7);
-        }
+        });
     }
 };

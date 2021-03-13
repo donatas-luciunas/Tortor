@@ -1,30 +1,23 @@
 const spawn = require('child_process').spawn;
 const WebSocket = require('ws');
 const esprima = require('esprima');
-
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 const vscode = require('vscode');
-
-// this method is called when your extension is activated
-// your extension is activated the very first time the command is executed
 
 /**
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
 	console.log('Now active!');
-	const insightsCollection = vscode.languages.createDiagnosticCollection('tortor');
+
+	const insightsCollection = vscode.languages.createDiagnosticCollection('Tortor');
+	const outputChannel = vscode.window.createOutputChannel('Tortor');
 	let child;
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with  registerCommand
-	// The commandId parameter must match the command field in package.json
 	let disposable = vscode.commands.registerCommand('extension.tortor', async () => {
-		// The code you place here will be executed every time your command is executed
+
 		insightsCollection.clear();
+		outputChannel.clear();
+		outputChannel.show();
 
 		let ws;
 
@@ -50,23 +43,39 @@ function activate(context) {
 
 		try {
 			const fileName = vscode.window.activeTextEditor.document.fileName.replace(/\\/g, '/');
-			const mainFileName = (() => {
+			const [mainFileName, workingDirectory] = (() => {
 				const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.toString().replace('file:///', '').replace('%3A', ':');
 				const path = require('path');
 				const fs = require('fs');
 				const packageJsonPath = path.join(workspaceFolder, 'package.json');
 				if (fs.existsSync(packageJsonPath)) {
-					return path.join(workspaceFolder, JSON.parse(fs.readFileSync(packageJsonPath).toString()).main);
+					return [
+						path.join(workspaceFolder, JSON.parse(fs.readFileSync(packageJsonPath).toString()).main),
+						path.dirname(packageJsonPath)
+					];
 				}
-				return fileName;
+				return [fileName, workspaceFolder];
 			})();
 			const lineNumber = vscode.window.activeTextEditor.selection.start.line;
 			const scriptMetaData = esprima.parseScript(require('fs').readFileSync(fileName).toString(), { loc: true });
 
-			child = spawn('node', ['--inspect-brk', mainFileName, '--tortor']);
-			child.stdout.pipe(process.stdout);
-			child.stderr.pipe(process.stderr);
-			// TODO: reiktų forward'int stream kažkur kur mato user
+			if (child) {
+				child.kill();
+				child = null;
+			}
+			child = spawn('node', ['--inspect-brk', mainFileName, '--tortor'], { cwd: workingDirectory });
+			child.stdout.on('data', data => {
+				outputChannel.append(data.toString());
+			});
+			child.stderr.on('data', data => {
+				outputChannel.append(data.toString());
+			});
+			child.on('close', code => {
+				if (code !== 0) {
+					vscode.window.showErrorMessage(`Tortor finished with error code ${code}`);
+				}
+				child = null;
+			});
 
 			const wsUrl = await new Promise((resolve, reject) => {
 				let line = '';
@@ -94,15 +103,22 @@ function activate(context) {
 			await new Promise(resolve => {
 				ws.on('open', resolve);
 			});
+			ws.on('error', data => {
+				console.error(data);
+			});
 
 			ws.on('message', dataString => {
-				const data = JSON.parse(dataString);
-				if (data.method === 'Debugger.scriptParsed') {
-					console.debug(`script ${data.params.url}`);
-				} else if (data.method === 'Debugger.paused') {
-					console.debug('Debugger.paused', data.params.reason);
-				} else {
-					console.debug(data);
+				try {
+					const data = JSON.parse(dataString);
+					if (data.method === 'Debugger.scriptParsed') {
+						console.debug(`script ${data.params.url}`);
+					} else if (data.method === 'Debugger.paused') {
+						console.debug('Debugger.paused', data.params.reason);
+					} else {
+						console.debug(data);
+					}
+				} catch (e) {
+					console.error(e);
 				}
 			});
 
@@ -122,6 +138,7 @@ function activate(context) {
 			}
 
 			await request(createMessage('Debugger.enable'));
+			await request(createMessage('Runtime.enable'));
 			await request(createMessage('Debugger.setPauseOnExceptions', { state: 'uncaught' }));
 			await request(createMessage('Debugger.setBreakpointByUrl', {
 				url: `file:///${fileName}`,
@@ -153,77 +170,135 @@ function activate(context) {
 			});
 
 			const variableValues = new Map();
-			let identifierTokens;
+			let expressionTokens;
+			let debuggerPausedState;
 			while (true) {
-				const debuggerPausedState = await new Promise(resolve => {
-					const handler = dataString => {
-						const data = JSON.parse(dataString);
-						if (data.method === 'Debugger.paused') {
-							ws.off('message', handler);
-							return resolve(data);
-						}
-					};
-					ws.on('message', handler);
-				});
+				const event = await Promise.race([
+					new Promise(resolve => {
+						const handler = dataString => {
+							const data = JSON.parse(dataString);
+							if (data.method === 'Runtime.executionContextDestroyed') {
+								ws.off('message', handler);
+								return resolve(data);
+							}
+						};
+						ws.on('message', handler);
+					}),
+					new Promise(resolve => {
+						const handler = dataString => {
+							const data = JSON.parse(dataString);
+							if (data.method === 'Debugger.paused') {
+								ws.off('message', handler);
+								return resolve(data);
+							}
+						};
+						ws.on('message', handler);
+					})
+				]);
+				if (event.method === 'Debugger.paused') {
+					debuggerPausedState = event.params;
+				} else {
+					break;
+				}
 
-				if (identifierTokens === undefined) {
-					const startLocation = debuggerPausedState.params.callFrames[0].scopeChain[0].startLocation;
+				if (expressionTokens === undefined) {
+
+					const getExpression = (token) => {
+						if (token.type === 'Literal') {
+							return token.value;
+						} else if (token.type === 'Identifier') {
+							return token.name;
+						} else if (token.type === 'MemberExpression') {
+							const objectPart = getExpression(token.object);
+							const propertyPart = getExpression(token.property);
+							if (token.computed) {
+								return `${objectPart}[${propertyPart}]`;
+							} else {
+								return objectPart + '.' + propertyPart;
+							}
+						}
+						return '';
+					};
+
+					expressionTokens = [];
+					const startLocation = debuggerPausedState.callFrames[0].scopeChain[0].startLocation;
 					let analyzeQueue = [scriptMetaData];
 					while (analyzeQueue.length > 0) {
-						const item = analyzeQueue.pop();
-						for (const [key, identifierToken] of Object.entries(item)) {
-							if (identifierToken && typeof identifierToken === 'object') {
-								if (identifierToken.type && identifierToken.type === 'Identifier') {
-									if (identifierToken.loc.start.line - 1 >= startLocation.lineNumber && identifierToken.loc.start.column >= startLocation.columnNumber && identifierToken.loc.end.line - 1 < lineNumber) {
-										identifierTokens.push(identifierToken);
+						const token = analyzeQueue.pop();
+
+						if (token.type && ['MemberExpression', 'Identifier'].includes(token.type)) {
+							if ((token.loc.start.line - 1 > startLocation.lineNumber || (token.loc.start.line - 1 === startLocation.lineNumber && token.loc.start.column >= startLocation.columnNumber))
+								&& token.loc.end.line - 1 < lineNumber) {
+								const expression = getExpression(token);
+								expressionTokens.push({
+									expression: expression,
+									loc: token.loc
+								});
+								variableValues.set(expression, []);
+							}
+						} else {
+							for (const [key, innerToken] of Object.entries(token)) {
+								if (innerToken && typeof innerToken === 'object') {
+									if (Array.isArray(innerToken)) {
+										analyzeQueue.push(...innerToken);
+									} else {
+										analyzeQueue.push(innerToken);
 									}
-								} else if (Array.isArray(identifierToken)) {
-									analyzeQueue.push(...identifierToken);
-								} else {
-									analyzeQueue.push(identifierToken);
 								}
 							}
 						}
 					}
 				}
 
-				for (const identifierToken of identifierTokens) {
-					// todo: skip duplicates
+				for (const [key, values] of variableValues.entries()) {
 					const value = await new Promise(resolve => {
-						const { msgid, msg } = createMessage('Debugger.evaluateOnCallFrame', { callFrameId: debuggerPausedState.params.callFrames[0].callFrameId, expression: identifierToken.name, throwOnSideEffect: true });
+						const { msgid, msg } = createMessage('Debugger.evaluateOnCallFrame', { callFrameId: debuggerPausedState.callFrames[0].callFrameId, expression: key, throwOnSideEffect: true });
 						const handler = dataString => {
 							const data = JSON.parse(dataString);
 							if (data.id === msgid) {
 								ws.off('message', handler);
-								return resolve(data.result.result.description);
+								return resolve(data.result.result);
 							}
 						}
 						ws.on('message', handler);
 						ws.send(msg);
 					});
-					messages.push({
-						loc: identifierToken.loc,
-						value
-					});
+					values.push(value.description || value.value || 'UNDEFINED');
 				}
+
+				await new Promise(resolve => {
+					const handler = dataString => {
+						const data = JSON.parse(dataString);
+						if (data.method === 'Debugger.resumed') {
+							ws.off('message', handler);
+							return resolve(data);
+						}
+					};
+					ws.on('message', handler);
+					ws.send(createMessage('Debugger.resume').msg);
+				});
 			}
 
-			insightsCollection.set(vscode.window.activeTextEditor.document.uri, messages.map(message => ({
-				code: '',
-				message: message.value,
-				range: new vscode.Range(new vscode.Position(message.loc.start.line - 1, message.loc.start.column), new vscode.Position(message.loc.end.line - 1, message.loc.end.column)),
-				severity: vscode.DiagnosticSeverity.Information,
-				source: ''
-			})));
+			await new Promise(resolve => setTimeout(resolve, 2000));
+
+			insightsCollection.set(vscode.window.activeTextEditor.document.uri, expressionTokens.reduce((result, expressionToken) => {
+				for (const value of variableValues.get(expressionToken.expression)) {
+					result.push({
+						code: '',
+						message: value,
+						range: new vscode.Range(new vscode.Position(expressionToken.loc.start.line - 1, expressionToken.loc.start.column), new vscode.Position(expressionToken.loc.end.line - 1, expressionToken.loc.end.column)),
+						severity: vscode.DiagnosticSeverity.Information,
+						source: 'Tortor'
+					});
+				}
+
+				return result;
+			}, []));
 		} catch (e) {
 			console.error(e);
 		} finally {
 			if (ws) {
 				ws.close();
-			}
-			if (child) {
-				child.kill();
-				child = null;
 			}
 		}
 	});
