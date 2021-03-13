@@ -11,7 +11,8 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "program": "${workspaceFolder}\\geras.js"
+            "program": "${workspaceFolder}\\geras.js",
+            // "args": ["--tortor"]
         }
     ]
 }
