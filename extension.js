@@ -15,6 +15,8 @@ function activate(context) {
 
 	let disposable = vscode.commands.registerCommand('extension.tortor', async () => {
 
+		const documentUri = vscode.window.activeTextEditor.document.uri;
+
 		insightsCollection.clear();
 		outputChannel.clear();
 		outputChannel.show();
@@ -79,6 +81,7 @@ function activate(context) {
 				outputChannel.append(data.toString());
 			});
 			child.on('close', code => {
+				outputChannel.appendLine('exited');
 				if (code !== 0) {
 					vscode.window.showErrorMessage(`Tortor finished with error code ${code}`);
 				}
@@ -287,7 +290,7 @@ function activate(context) {
 				});
 			}
 
-			insightsCollection.set(vscode.window.activeTextEditor.document.uri, expressionTokens.reduce((result, expressionToken) => {
+			insightsCollection.set(documentUri, expressionTokens.reduce((result, expressionToken) => {
 				for (const value of variableValues.get(expressionToken.expression)) {
 					result.push({
 						code: '',
