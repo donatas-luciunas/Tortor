@@ -55,7 +55,7 @@
 
     // rest of app
     console.log('geras');
-    require('./index')(2, 2);
+    await require('./index')(2, 2);
 
     // run mocha
     if (global.tortor) {
