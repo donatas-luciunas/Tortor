@@ -6,7 +6,7 @@ module.exports = function (a, b) {
     }
     const c = a + b;
     const z = 'testas';
-    const d = { mano: 'ilgas', kitas: { o: 3 }, a: [1, 2, 3], d: null };
+    const d = { mano: 4.20, kitas: { o: 3 }, a: [1, 2, 3], d: null, e: true, f: 'testas' };
     console.log(c, z, d);
     if (global.tortor) {
         global.tortor.ti(null, 'mano trumpas testas', () => {

@@ -335,6 +335,7 @@ function activate(context) {
 										if (property.description === "NaN") {
 											value = NaN;
 										}
+										value = Number(value);
 										break;
 									}
 									case "bigint": {
@@ -344,7 +345,9 @@ function activate(context) {
 										break;
 									}
 									case "string":
+										break;
 									case "boolean": {
+										value = value === 'true';
 										break;
 									}
 									case "function": {
@@ -360,7 +363,12 @@ function activate(context) {
 
 							return result;
 						})();
-						values.push(util.inspect(object));
+
+						let text = util.inspect(object);
+						if (value.preview.overflow) {
+							text = text.replace(' }', ', ... }').replace('\n}', ',\n  ...\n}');
+						}
+						values.push(text);
 					} else if (typeof value.value === 'string') {
 						values.push(`'${value.value}'`);
 					} else {
