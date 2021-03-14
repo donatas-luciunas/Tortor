@@ -1,5 +1,5 @@
 (async () => {
-    global.tortor = process.argv.includes('--tortor') ? {} : null;
+    global.tortor = process.env.TORTOR ? {} : null;
     if (global.tortor) {
         const options = {
             spec: ['./{,!(node_modules)/**/}*.test.js'],

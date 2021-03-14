@@ -74,7 +74,7 @@ function activate(context) {
 				child.kill();
 				child = null;
 			}
-			child = spawn('node', ['--inspect-brk', mainFileName, '--tortor'], { cwd: workingDirectory });
+			child = spawn('node', ['--inspect-brk', mainFileName], { cwd: workingDirectory, env: { TORTOR: true } });
 			child.stdout.on('data', data => {
 				outputChannel.append(data.toString());
 			});
@@ -313,11 +313,11 @@ function activate(context) {
 													case "global":
 														value = Function('return this')();
 														break;
-													case "Number":
-													case "String":
-													case "Boolean":
-														value = this.reconstructValue(property.objectId);
-														break;
+													// case "Number":
+													// case "String":
+													// case "Boolean":
+													// 	value = this.reconstructValue(property.objectId);
+													// 	break;
 													default:
 														value = {};
 														break;
@@ -329,7 +329,6 @@ function activate(context) {
 									}
 									case "undefined": {
 										value = undefined;
-										isUndefined = true;
 										break;
 									}
 									case "number": {

@@ -12,7 +12,9 @@
                 "<node_internals>/**"
             ],
             "program": "${workspaceFolder}\\geras.js",
-            // "args": ["--tortor"]
+            // "env": {
+            //     "TORTOR": "true"
+            // }
         }
     ]
 }
