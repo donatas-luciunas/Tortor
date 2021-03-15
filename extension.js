@@ -304,7 +304,7 @@ function activate(context) {
 
 						if (value.preview) {
 							const object = (() => {
-								const result = {};
+								const result = value.subtype && value.subtype === 'array' ? eval(value.description) : {};
 								for (const property of value.preview.properties) {
 									let value = property.value;
 									switch (property.type) {
@@ -324,8 +324,7 @@ function activate(context) {
 													break;
 												}
 												case "array": {
-													const array = [];
-													value = array;
+													value = eval(value);
 													break;
 												}
 												case "null": {
