@@ -11,10 +11,10 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "program": "${workspaceFolder}\\geras.js",
-            // "env": {
-            //     "TORTOR": "true"
-            // }
+            "program": "${workspaceFolder}\\index.js",
+            "env": {
+                "TORTOR": "true"
+            }
         }
     ]
 }

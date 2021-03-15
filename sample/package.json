@@ -1,3 +1,6 @@
 {
-    "main": "./geras.js"
+    "main": "./index.js",
+    "devDependencies": {
+        "mocha": "^8.3.2"
+    }
 }
