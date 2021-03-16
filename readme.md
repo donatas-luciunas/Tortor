@@ -1,4 +1,4 @@
-# tortor
+# Tortor
 
 ## Problems
 
@@ -7,18 +7,18 @@
 
 ## Solution
 
-* [Maintain **tortor** environment](#tortor-environment)
-* [**tortor** will accompany you with current variable values](#tortor-extension)
+* [Maintain Tortor environment](#tortor-environment)
+* [Tortor will accompany you with current variable values](#tortor-extension)
 
-## **tortor** environment
+## Tortor environment
 
 Please take a look at [sample](/sample).
 
 BTW [nock](https://github.com/nock/nock) can be very helpful.
 
-## **tortor** extension
+## Tortor extension
 
-Hit `CTRL+SHIFT+'` and **tortor** will provide values for variables mentioned in current scope.
+Hit `CTRL+SHIFT+'` and Tortor will provide values for variables mentioned in current scope.
 
 ![demo](/demo.gif)
 
