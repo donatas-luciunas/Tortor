@@ -12,8 +12,11 @@ module.exports = async function (a, b) {
     const sampleArray = [1, 2, 3, 4, 5];
     // await new Promise(resolve => setTimeout(resolve, 5000));
     for (const item of sampleArray) {
-        const a = item + 1;
-        console.log(a);
+        const o = item + 1;
+        // console.log(a);
+        if (o === 3) {
+            console.log(o);
+        }
     }
     if (global.tortor) {
         // global.tortor.ti(null, null, () => {

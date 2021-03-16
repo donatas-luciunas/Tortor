@@ -208,28 +208,40 @@ function activate(context) {
 				const variableValues = new Map();
 				let expressionTokens;
 				let debuggerPausedState;
+				const exitPromise = new Promise(resolve => {
+					const handler = dataString => {
+						const data = JSON.parse(dataString);
+						if (data.method === 'Runtime.executionContextDestroyed') {
+							ws.off('message', handler);
+							return resolve(data);
+						}
+					};
+					ws.on('message', handler);
+				});
+				async function* debuggerPaused() {
+					const createDebuggerPausedPromise = () => new Promise(resolve => {
+						const handler = dataString => {
+							const data = JSON.parse(dataString);
+							if (data.method === 'Debugger.paused') {
+								ws.off('message', handler);
+								return resolve(data);
+							}
+						};
+						ws.on('message', handler);
+					});
+					let debuggerPausedPromise = createDebuggerPausedPromise();
+					while (true) {
+						const event = await debuggerPausedPromise;
+						debuggerPausedPromise = createDebuggerPausedPromise();
+						yield event;
+					}
+				}
+				const debuggerPausedIterator = debuggerPaused();
+
 				while (true) {
 					const event = await Promise.race([
-						new Promise(resolve => {
-							const handler = dataString => {
-								const data = JSON.parse(dataString);
-								if (data.method === 'Runtime.executionContextDestroyed') {
-									ws.off('message', handler);
-									return resolve(data);
-								}
-							};
-							ws.on('message', handler);
-						}),
-						new Promise(resolve => {
-							const handler = dataString => {
-								const data = JSON.parse(dataString);
-								if (data.method === 'Debugger.paused') {
-									ws.off('message', handler);
-									return resolve(data);
-								}
-							};
-							ws.on('message', handler);
-						})
+						exitPromise,
+						debuggerPausedIterator.next().then(result => result.value)
 					]);
 					if (event.method === 'Debugger.paused') {
 						debuggerPausedState = event.params;
@@ -257,7 +269,7 @@ function activate(context) {
 						};
 
 						expressionTokens = [];
-						const startLocation = debuggerPausedState.callFrames[0].scopeChain[0].startLocation;
+						const startLocation = debuggerPausedState.callFrames[0].scopeChain.find(scope => scope.type === 'local').startLocation;
 						let analyzeQueue = [scriptMetaData];
 						while (analyzeQueue.length > 0) {
 							const token = analyzeQueue.pop();
