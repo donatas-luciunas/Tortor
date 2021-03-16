@@ -4,11 +4,11 @@
   "description": "",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@bitbucket.org/donatasluciunas/smartdebug.git"
+    "url": "https://github.com/donatas-luciunas/tortor"
   },
-  "author": "",
+  "author": "Donatas Lučiūnas",
   "license": "ISC",
-  "homepage": "https://bitbucket.org/donatasluciunas/smartdebug#readme",
+  "homepage": "https://github.com/donatas-luciunas/tortor",
   "engines": {
     "vscode": "^1.32.0"
   },

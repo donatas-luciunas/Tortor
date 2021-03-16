@@ -1,27 +1,27 @@
 const sum = require('./sum');
-describe('geras describe', async function () {
-    it('mano ilgas testas', async function () {
+describe('1', async function () {
+    it('1', async function () {
         await sum(1, 2);
     });
 
-    it('mano trumpas testas', async function () {
+    it('2', async function () {
         await sum(3, 4);
     });
 });
 
-describe('antras describe', async function () {
+describe('2', async function () {
     xit('1', async function () {
         await sum(1, 5);
     });
-    describe('antras describe', async function () {
+    describe('2.1', async function () {
         it('1', async function () {
-            await sum(1, 5);
+            await sum(1, 9);
         });
     });
 });
 
-xdescribe('isjungtas', async function () {
+xdescribe('3', async function () {
     it('1', async function () {
-        await sum(1, 6);
+        await sum(5, 6);
     });
 });

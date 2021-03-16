@@ -2,8 +2,8 @@
     await require('./tortor')();
 
     // rest of app
-    console.log('geras');
-    await require('./sum')(2, 2);
+    const sum = require('./sum');
+    // ...
 
     // run mocha
     if (global.tortor) {
