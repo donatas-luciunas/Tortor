@@ -30,14 +30,27 @@
         "mac": "cmd+shift+'",
         "when": "editorTextFocus"
       }
-    ]
-  },
-  "scripts": {},
-  "devDependencies": {
-    "@types/vscode": "^1.32.0"
-  },
-  "dependencies": {
-    "esprima": "^4.0.1",
-    "ws": "^7.4.4"
+    ],
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "comments": "#FF0000",
+        "textMateRules": [
+          {
+            "name": "this.self",
+            "scope": "variable.language",
+            "settings": {
+              "foreground": "#FF0000"
+            }
+          }
+        ]
+      }
+    },
+    "scripts": {},
+    "devDependencies": {
+      "@types/vscode": "^1.32.0"
+    },
+    "dependencies": {
+      "esprima": "^4.0.1",
+      "ws": "^7.4.4"
+    }
   }
-}

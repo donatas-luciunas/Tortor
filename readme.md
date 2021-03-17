@@ -29,6 +29,8 @@ As this extension is still in development the only way to enable it in your VS C
 * Publish this in [VS Code Extension Marketplace](https://marketplace.visualstudio.com/vscode)
 * `global.tortor` regions should be dimmed for better readability
 
+Encountered the same problem as https://github.com/tiffon/vscode-todone - cannot proceed
+
 ## Vision
 
 * With help of this extension you could validate your code with your test dataset while coding
